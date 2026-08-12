@@ -1,0 +1,24 @@
+LABScreen QC Generator
+
+**Overview**
+This project automates QC review of LABScreen assays using R.
+**Features**
+Levy-Jennings charts
+Separate Class I and Class II analysis
+Bead median value trending
+Multi-page PDF reports
+**Requirements**
+R 4.3+
+**Required Packages:**
+tidyverse
+readxl
+ggplot2
+patchwork
+lubridate
+**Usage**
+Export QC data.
+Select input file.
+Run the script.
+
+**Disclaimer**
+Sample data only. No patient information should be uploaded.
