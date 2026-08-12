@@ -6,10 +6,10 @@ library(gridExtra)
 
 
 #################################################
-# SETTINGS
+# SETTINGS, update Line 12
 #################################################
 
-input_folder <- "B:/HCSD/HLATissueTyping/My Batches/Output/"
+input_folder <- "Select Input Folder Path"
 
 output_file <- file.path(
   input_folder,
