@@ -1,2 +1,6 @@
-# HLA
-HLA, Histocompatibility, and Transplant Laboratory Tools
+HLA
+Collection of HLA and transplant laboratory tools.
+
+Projects
+**LABScreen QC Generator**
+Automated QC analysis for LABScreen assays.
