@@ -1,38 +1,30 @@
 library(dplyr)
 library(openxlsx)
 library(ggplot2)
-library(patchwork)
 library(gridExtra)
 
-
 #################################################
-# SETTINGS, update Line 12
+# SETTINGS
 #################################################
 
-input_folder <- "Select Input Folder Path"
+input_folder <- "B:/HCSD/HLATissueTyping/My Batches/Output/00_ANALYZED_DATA_00/Jan To Jun2026/April to June 2026"
 
 output_file <- file.path(
   input_folder,
   "Luminex_Bead_Statistics_By_Control.xlsx"
 )
 
-graph_dir <- file.path(
-  input_folder,
-  "Luminex QC_Graphs"
-)
 pdf_dir <- file.path(
   input_folder,
   "Luminex QC_PDFs"
 )
 
+verbose <- FALSE
+
 if(!dir.exists(pdf_dir)){
   dir.create(pdf_dir, recursive = TRUE)
 }
 
-
-if(!dir.exists(graph_dir)){
-  dir.create(graph_dir, recursive = TRUE)
-}
 
 #################################################
 # QC CONTROL DEFINITIONS
@@ -64,7 +56,30 @@ files <- list.files(
   full.names = TRUE
 )
 
-all_results <- data.frame()
+#################################################
+# EXCLUDE C1q FILES BY FILENAME
+#################################################
+
+files <- files[
+  !grepl(
+    "C1q",
+    basename(files),
+    ignore.case = TRUE
+  )
+]
+
+cat(
+  "CSV files after excluding C1q:",
+  length(files),
+  "\n"
+)
+
+#################################################
+# CREATE EMPTY RESULTS LIST
+#################################################
+
+all_results_list <- list()
+result_counter <- 1
 
 #################################################
 # PROCESS FILES
@@ -72,7 +87,9 @@ all_results <- data.frame()
 
 for(file in files){
   
-  cat("Reading:", basename(file), "\n")
+  if(verbose){
+    cat("Reading:", basename(file), "\n")
+  }
   
   lines <- readLines(file, warn = FALSE)
   
@@ -108,6 +125,28 @@ for(file in files){
   }
   
   #################################################
+  # KEEP ONLY SINGLE ANTIGEN ASSAYS
+  #################################################
+  
+  if(
+    is.na(protocol_description) ||
+    !grepl(
+      "Single Antigen",
+      protocol_description,
+      ignore.case = TRUE
+    )
+  ){
+    if(verbose){
+      cat(
+        "Skipping non-SAB assay:",
+        basename(file),
+        "\n"
+      )
+    }
+    next
+  }
+  
+  #################################################
   # DETERMINE HLA CLASS
   #################################################
   
@@ -116,6 +155,21 @@ for(file in files){
     grepl("Class\\s*(2|II)\\b", protocol_description, ignore.case = TRUE) ~ "Class II",
     TRUE ~ "Unknown"
   )
+  
+  #################################################
+  # SKIP UNKNOWN CLASS
+  #################################################
+  
+  if(hla_class == "Unknown"){
+    if(verbose){
+      cat(
+        "Skipping unknown HLA class:",
+        basename(file),
+        "\n"
+      )
+    }
+    next
+  }
   
   #################################################
   # RUN DATE
@@ -148,12 +202,16 @@ for(file in files){
   )
   
   if(is.null(dat)){
-    cat("Skipping file because it could not be read:", basename(file), "\n")
+    if(verbose){
+      cat("Skipping file because it could not be read:", basename(file), "\n")
+    }
     next
   }
   
   if(!"Sample" %in% names(dat)){
-    cat("Skipping file because Sample column was not found:", basename(file), "\n")
+    if(verbose){
+      cat("Skipping file because Sample column was not found:", basename(file), "\n")
+    }
     next
   }
   
@@ -166,7 +224,9 @@ for(file in files){
   )
   
   if(length(bead_cols) == 0){
-    cat("Skipping file because no bead columns were found:", basename(file), "\n")
+    if(verbose){
+      cat("Skipping file because no bead columns were found:", basename(file), "\n")
+    }
     next
   }
   
@@ -189,6 +249,17 @@ for(file in files){
     
     if(nrow(qc_dat) == 0) next
     
+    if(verbose){
+      cat(
+        control_name,
+        "found",
+        nrow(qc_dat),
+        "rows in",
+        basename(file),
+        "\n"
+      )
+    }
+    
     for(b in bead_cols){
       
       mfi_values <- suppressWarnings(
@@ -209,20 +280,24 @@ for(file in files){
         stringsAsFactors = FALSE
       )
       
-      all_results <- rbind(
-        all_results,
-        temp
-      )
+      all_results_list[[result_counter]] <- temp
+      result_counter <- result_counter + 1
     }
   }
 }
+
+#################################################
+# COMBINE RESULTS
+#################################################
+
+all_results <- bind_rows(all_results_list)
 
 #################################################
 # STOP IF NO DATA FOUND
 #################################################
 
 if(nrow(all_results) == 0){
-  stop("No QC data found. Check input folder, CSV files, QC sample names, and skip row.")
+  stop("No QC data found. Check input folder, CSV files, QC sample names, protocol description, and skip row.")
 }
 
 #################################################
@@ -337,7 +412,6 @@ for(control_name in unique(all_results$Control)){
     
     addWorksheet(wb, stat_sheet)
     writeData(wb, stat_sheet, stat_data)
-    
   }
 }
 
@@ -359,7 +433,7 @@ cat(output_file, "\n\n")
 
 cat("Rows in all_results:", nrow(all_results), "\n")
 cat("Rows in median_data:", nrow(median_data), "\n")
-cat("Graph directory:", graph_dir, "\n\n")
+cat("PDF directory:", pdf_dir, "\n\n")
 
 #################################################
 # GENERATE PDF REPORTS
@@ -420,26 +494,23 @@ for(control_name in unique(median_data$Control)){
           color = plot_color,
           size = 1.5
         ) +
-        
         geom_hline(
           yintercept = mean_mfi,
           color = "darkgreen"
         ) +
-        
         geom_hline(
           yintercept = mean_mfi + (2 * sd_mfi),
           color = "red",
           linetype = "dashed"
         ) +
-        
         geom_hline(
           yintercept = mean_mfi - (2 * sd_mfi),
           color = "red",
           linetype = "dashed"
         ) +
-        
         labs(
           title = paste(
+            control_name,
             class_name,
             "Bead",
             bead_id
@@ -447,9 +518,7 @@ for(control_name in unique(median_data$Control)){
           x = "Run Number",
           y = "Median MFI"
         ) +
-        
         theme_bw() +
-        
         theme(
           plot.title = element_text(
             size = 9
@@ -463,6 +532,16 @@ for(control_name in unique(median_data$Control)){
         )
       
       plot_list[[length(plot_list) + 1]] <- p
+    }
+    
+    if(length(plot_list) == 0){
+      cat(
+        "No plots created for:",
+        control_name,
+        class_name,
+        "\n"
+      )
+      next
     }
     
     pdf_file <- file.path(
@@ -499,7 +578,6 @@ for(control_name in unique(median_data$Control)){
         ncol = 2,
         nrow = 3
       )
-      
     }
     
     dev.off()
@@ -509,11 +587,9 @@ for(control_name in unique(median_data$Control)){
       basename(pdf_file),
       "\n"
     )
-    
   }
 }
 
 cat(
   "\nFinished generating PDF QC reports.\n"
 )
-
